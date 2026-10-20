@@ -2,13 +2,13 @@
 # Sinkronisasi folder backup ke Google Drive via rclone (docker, tanpa install).
 # Kredensial Google diambil dari scripts/.env (TIDAK hardcode di script ini).
 # Jalankan via cron SETELAH backup selesai, contoh jam 4 pagi:
-#   0 4 * * * /opt/devops-2/scripts/sync-gdrive.sh
+#   0 4 * * * /opt/devops/scripts/sync-gdrive.sh
 # chmod +x scripts/sync-gdrive.sh
 
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 set -u
 
-BASE_DIR="${BASE_DIR:-/opt/devops-2}"
+BASE_DIR="${BASE_DIR:-$(cd "$(dirname "$0")/.." && pwd)}"
 
 # Ambil kredensial rclone dari scripts/.env (tidak di-commit)
 if [ -f "$BASE_DIR/scripts/.env" ]; then

@@ -2,7 +2,7 @@
 # Backup SQL Server (semua database terdaftar) -> folder tanggal -> cleanup >7 hari.
 # Password diambil dari 01-infra/.env (TIDAK hardcode di script ini).
 # Jalankan via cron, contoh tiap jam 2 pagi:
-#   0 2 * * * /opt/devops-2/scripts/backup-sqlserver.sh
+#   0 2 * * * /opt/devops/scripts/backup-sqlserver.sh
 # chmod +x scripts/backup-sqlserver.sh
 
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
@@ -11,7 +11,7 @@ set -u
 # ==========================================
 # KONFIGURASI
 # ==========================================
-BASE_DIR="${BASE_DIR:-/opt/devops-2}"
+BASE_DIR="${BASE_DIR:-$(cd "$(dirname "$0")/.." && pwd)}"
 CONTAINER="infra_sqlserver"
 USER="sa"
 

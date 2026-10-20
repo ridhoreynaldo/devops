@@ -1,208 +1,62 @@
-# 🚀 DevOps Infrastructure
+# devops — infra bersama untuk semua aplikasi
 
-Infrastruktur multi-service berbasis Docker Compose untuk mengelola beberapa aplikasi web (Laravel/PHP) di balik satu **Global Nginx Gateway**, lengkap dengan SSL, monitoring, tunneling, dan backup terpusat.
-
----
-
-## 📐 Arsitektur
-
-Struktur ini dirancang dengan prinsip **modular per-layer**, di mana setiap folder angka (`00-`, `01-`, dst) merepresentasikan lapisan infrastruktur yang independen namun saling terhubung lewat Docker network.
+Satu server, satu repo infra, banyak aplikasi. Repo ini menyediakan **gateway, database, cache, antrian,
+monitoring, backup**; setiap aplikasi (mis. [`wa-gateway`](https://github.com/ridhoreynaldo/wa-gateway))
+hidup di repo sendiri dan di-deploy ke `04-apps/<nama>` dengan menempel ke infra ini.
 
 ```
-Internet
-   │
-   ▼
-┌─────────────────────┐
-│  00-gateway (Nginx)  │  ← Reverse proxy + SSL termination
-└─────────┬────────────┘
-          │
-   ┌──────┴───────┬──────────────┬──────────────┐
-   ▼               ▼              ▼              ▼
-01-infra      02-monitoring   03-tunnel      04-services
-(DB/Redis)    (Prometheus)    (Cloudflare)   (rclone, WA GW)
-          │
-          ▼
-    apps/app-{n}/{domain}
-    (Laravel + PHP-FPM + Nginx internal)
+Internet ──► 00-gateway  nginx :80/:443  (SSL, rate-limit, 1 vhost per domain)
+                 │  network docker: global-gateway-net
+    ┌────────────┼──────────────┬──────────────────┬───────────────┐
+    ▼            ▼              ▼                  ▼               ▼
+01-infra     02-monitoring   03-services       04-apps/<app>   04-apps/<app>
+postgres     prometheus      9router           wa-gateway      (repo lain…)
+pgbouncer    grafana                           ├ web
+redis cache  uptime-kuma                       ├ worker
+redis queue  portainer                         └ migrate
+sqlserver    cadvisor
 ```
 
-**Alur request:**
-`Client → Nginx Gateway (00-gateway) → Nginx internal per-app → PHP-FPM → Laravel`
+| Layer | Isi | Dokumen |
+|---|---|---|
+| `00-gateway/` | nginx global, SSL (Let's Encrypt/Origin CA), vhost per domain | [README](00-gateway/README.md) |
+| `01-infra/` | PostgreSQL 16 + PgBouncer, Redis cache, Redis queue, SQL Server | [README](01-infra/README.md) |
+| `02-monitoring/` | Prometheus, Grafana, Uptime Kuma, Portainer, cAdvisor, node-exporter | [README](02-monitoring/README.md) |
+| `03-services/` | layanan pendukung tanpa repo sendiri (9router) | — |
+| `04-apps/` | **aplikasi = repo terpisah**, didaftarkan di `apps.list` | [README](04-apps/README.md) · [kontrak](docs/APPS.md) |
+| `scripts/` | `create-app-db.sh`, `deploy-app.sh`, `issue-cert.sh`, backup, sync Google Drive | [OPERATIONS](docs/OPERATIONS.md) |
+| `bootstrap.sh` | server kosong → semua layer jalan, idempotent | [SETUP](docs/SETUP.md) |
+| `Makefile` | pintasan: `make up`, `make deploy A=…`, `make cert D=…`, `make nginx-reload` | `make help` |
 
----
-
-## 📁 Struktur Folder
-
-```
-/opt/devops
-├── 00-gateway/       # Reverse proxy utama (SSL, routing semua domain)
-├── 01-infra/         # Database, cache, dan backup terpusat
-├── 02-monitoring/    # Observability stack (Prometheus dkk)
-├── 03-tunnel/        # Cloudflare Tunnel (expose tanpa buka port publik)
-├── 04-services/      # Layanan pendukung (rclone, WA Gateway, dll)
-├── apps/             # Kumpulan aplikasi (multi-tenant, per domain)
-├── scripts/          # Automation script (deploy, backup, dsb)
-├── .env              # Environment variable global
-└── .gitignore
-```
-
----
-
-## 🧩 Detail Setiap Layer
-
-### 1️⃣ `00-gateway/` — Nginx Reverse Proxy & SSL
-
-Pusat lalu lintas dari seluruh domain yang di-hosting.
-
-| Folder/File | Fungsi |
-|---|---|
-| `logs/` | Access & error log Nginx global |
-| `ssl/` | Sertifikat SSL **manual** (Cloudflare Origin CA / beli sendiri), 1 folder per domain |
-| `letsencrypt/` | Sertifikat SSL **otomatis** dari Certbot |
-| `certbot/www/` | Folder validasi ACME Challenge untuk penerbitan SSL Let's Encrypt |
-| `nginx/conf.d/` | File konfigurasi vhost per domain/aplikasi |
-| `nginx/nginx.conf` | Konfigurasi utama Nginx |
-| `docker-compose.yml` | Definisi container gateway |
-
-> 💡 **Konvensi penamaan config:** `app{n}_{domain-dengan-strip}[-{port}].conf`
-> Contoh: `app2_portaluniversitasquality-ac-id-6923.conf`
-
----
-
-### 2️⃣ `01-infra/` — Database & Storage Layer
-
-Berisi seluruh service data yang dipakai bersama (shared) oleh aplikasi-aplikasi di `apps/`.
-
-| Folder | Fungsi |
-|---|---|
-| `postgres/` | Database PostgreSQL |
-| `sqlserver/` | Database SQL Server |
-| `redis/` | Cache & session store |
-| `backup/` | Hasil backup terjadwal seluruh database |
-
----
-
-### 3️⃣ `02-monitoring/` — Observability
-
-| Folder/File | Fungsi |
-|---|---|
-| `prometheus/prometheus.yml` | Konfigurasi target scraping metrik |
-
----
-
-### 4️⃣ `03-tunnel/` — Cloudflare Tunnel
-
-Menghubungkan server ke Cloudflare tanpa perlu membuka port publik secara langsung — meningkatkan keamanan sekaligus menyembunikan IP origin.
-
----
-
-### 5️⃣ `04-services/` — Layanan Tambahan
-
-| Folder | Fungsi |
-|---|---|
-| `rclone/` | Sinkronisasi/mount storage cloud (Google Drive, S3, dll) |
-| `wa-gateway/` | Gateway WhatsApp (notifikasi, integrasi bot, dsb) |
-
----
-
-### 6️⃣ `apps/` — Multi-Tenant Applications
-
-Setiap aplikasi memiliki namespace sendiri: `apps/app-{n}/{nama-domain}/`, sehingga penambahan aplikasi baru **tidak mengganggu** aplikasi lain.
-
-```
-apps/app-3/ridhoreynaldo-com/
-├── nginx/
-│   └── default.conf        # Listen port 80, hanya trafik internal dari Gateway
-├── php/
-│   ├── Dockerfile           # Build image PHP + ekstensi custom
-│   ├── custom.ini           # php.ini (upload_max_filesize, memory_limit, dll)
-│   ├── docker-entrypoint.sh
-│   └── www.conf              # Konfigurasi PHP-FPM (pm.max_children, dll)
-├── logs/
-│   ├── nginx/                # access.log & error.log
-│   └── php/                  # error.log & slow.log PHP-FPM
-├── src/                       # Source code Laravel
-├── docker-compose.yml
-├── .dockerignore              # ignore vendor, node_modules, .env
-└── .env                       # Config dinamis, mis. NGINX_PORT=6923
-```
-
-> 🔒 **Isolasi jaringan:** Nginx internal setiap app **tidak** expose ke publik — hanya bisa diakses lewat jaringan internal Docker dari `00-gateway`.
-
----
-
-### 7️⃣ `scripts/` — Automation
-
-Kumpulan script pendukung operasional (deploy, backup manual, restart service, dll).
-
----
-
-## ⚙️ Cara Menjalankan
-
-Setiap layer dijalankan secara independen menggunakan Docker Compose miliknya masing-masing. Urutan yang disarankan:
+## Mulai
 
 ```bash
-# 1. Jalankan layer infrastruktur dasar terlebih dahulu
-cd 01-infra && docker compose up -d
+# server baru (root)
+curl -fsSL https://raw.githubusercontent.com/ridhoreynaldo/devops/main/bootstrap.sh | sudo bash
 
-# 2. Jalankan monitoring (opsional tapi disarankan)
-cd ../02-monitoring && docker compose up -d
-
-# 3. Jalankan tunnel (jika pakai Cloudflare Tunnel)
-cd ../03-tunnel && docker compose up -d
-
-# 4. Jalankan service pendukung
-cd ../04-services && docker compose up -d
-
-# 5. Jalankan aplikasi (ulangi untuk tiap app)
-cd ../apps/app-3/ridhoreynaldo-com && docker compose up -d --build
-
-# 6. Terakhir, jalankan Gateway agar semua trafik bisa masuk
-cd ../../../00-gateway && docker compose up -d
+# tambah aplikasi (contoh wa-gateway)
+cd /opt/devops
+make app-db A=wa_gateway                  # database + user → DATABASE_URL
+make deploy A=wa-gateway                  # clone dari 04-apps/apps.list, lalu minta isi .env → deploy ulang
+cp 00-gateway/nginx/conf.d/wa-gateway.conf.example 00-gateway/nginx/conf.d/wa-gateway.conf
+sed -i 's/wa.example.com/wa.domain-anda.com/g' 00-gateway/nginx/conf.d/wa-gateway.conf
+make cert D=wa.domain-anda.com && make nginx-reload
 ```
 
-> ⚠️ Pastikan semua service berada pada Docker **network** yang sama agar Gateway dapat mem-proxy ke container aplikasi.
+Detail: [docs/SETUP.md](docs/SETUP.md) (termasuk migrasi dari `/opt/devops-2`), [docs/APPS.md](docs/APPS.md),
+[docs/OPERATIONS.md](docs/OPERATIONS.md), [docs/SECURITY.md](docs/SECURITY.md).
 
----
+## Prinsip
 
-## ➕ Menambahkan Aplikasi Baru
+- **Aplikasi tidak publish port dan tidak punya DB sendiri.** Masuk lewat gateway, data di `01-infra`.
+- **Satu aplikasi = satu role + satu database Postgres** (`scripts/create-app-db.sh`). Superuser hanya untuk admin.
+- **Server tidak diedit langsung.** Semua perubahan lewat git → `git pull` / `deploy-app.sh`.
+- **Secret tidak pernah di-commit.** `.env` dibuat `bootstrap.sh`; `make secrets-check` sebelum commit.
+- Port DB/Redis/monitoring hanya `127.0.0.1`; dari laptop pakai SSH tunnel.
+- Image di-pin versinya; log dirotasi; tiap container punya limit memori/CPU dan `no-new-privileges`.
 
-1. Duplikat folder template di `apps/app-{n}/{domain-baru}/`
-2. Sesuaikan `.env` (misalnya `NGINX_PORT`)
-3. Sesuaikan `src/` dengan source code project
-4. Buat file config baru di `00-gateway/nginx/conf.d/app{n}_{domain}-{port}.conf`
-5. Siapkan sertifikat SSL:
-   - **Manual:** taruh di `00-gateway/ssl/{domain}/`
-   - **Otomatis:** jalankan Certbot, hasil akan masuk ke `00-gateway/letsencrypt/`
-6. Reload Nginx Gateway:
-   ```bash
-   docker exec -it <container_nginx_gateway> nginx -s reload
-   ```
+## ⚠ Catatan keamanan
 
----
-
-## 🔐 Keamanan & Best Practice
-
-- ✅ Semua `.env` dan `vendor/`, `node_modules/` **wajib** masuk `.gitignore` / `.dockerignore`
-- ✅ Aplikasi tidak pernah expose port langsung ke publik — selalu lewat Gateway
-- ✅ Gunakan Let's Encrypt untuk domain baru, simpan sertifikat manual hanya untuk kasus khusus (Cloudflare Origin CA, dll)
-- ✅ Backup database terjadwal disimpan di `01-infra/backup/`
-- ✅ Pisahkan log per aplikasi agar mudah di-debug tanpa mengganggu aplikasi lain
-
----
-
-## 🗂️ Ringkasan Layer
-
-| Layer | Peran |
-|---|---|
-| `00-gateway` | Pintu masuk semua trafik + SSL |
-| `01-infra` | Database, cache, backup |
-| `02-monitoring` | Observability & metrik |
-| `03-tunnel` | Koneksi aman tanpa expose port publik |
-| `04-services` | Layanan pendukung (integrasi, storage) |
-| `apps/` | Aplikasi-aplikasi yang dihosting |
-| `scripts/` | Automation & maintenance |
-
----
-
-*Dokumentasi ini menggambarkan struktur infrastruktur secara umum — sesuaikan detail konfigurasi dengan kebutuhan masing-masing environment (development/staging/production).*
+Sebelum Oktober 2026 repo ini pernah berisi private key SSL dan password database di history git.
+File sudah dihapus dari tree, tetapi **history masih menyimpannya** sampai di-rewrite dan semua kredensial
+tersebut harus dianggap bocor. Langkah rotasi ada di [docs/SECURITY.md](docs/SECURITY.md).

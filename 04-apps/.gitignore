@@ -1,0 +1,8 @@
+# Semua isi folder ini adalah clone repo aplikasi / env rahasia — tidak di-commit,
+# kecuali file pengelola di bawah.
+*
+!.gitignore
+!README.md
+!apps.list
+!docker-compose.yml
+!.env.example

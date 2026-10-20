@@ -1,4 +1,6 @@
-# 03-services/docker-compose.yml
+# 03-services — layanan pendukung yang bukan "aplikasi bisnis" (tidak punya repo sendiri).
+# Aplikasi (wa-gateway, dsb.) ada di 04-apps sebagai repo terpisah — lihat docs/APPS.md.
+
 x-logging: &default-logging
   driver: "json-file"
   options:
@@ -6,83 +8,15 @@ x-logging: &default-logging
     max-file: "3"
 
 services:
-  wa-gateway:
-    build:
-      context: ./wa-gateway
-      dockerfile: Dockerfile
-    container_name: service-wa-gateway
-    restart: unless-stopped
-    logging: *default-logging
-    ports:
-      # Bind ke localhost saja - expose ke publik hanya lewat 00-gateway
-      - "${BIND_IP:-127.0.0.1}:5000:5000"
-    env_file:
-      - path: ../01-infra/.env
-        required: false
-    environment:
-      # Koneksi ke Postgres layer infra (via global-gateway-net)
-      - PGHOST=infra_postgres
-      - PGPORT=5432
-      - PGUSER=postgres
-      - PGDATABASE=wagateway
-    volumes:
-      # Satu folder per sesi WA: sessions/<session-id>/
-      - ./wa-gateway/sessions:/app/sessions
-    networks:
-      - global-gateway-net
-    healthcheck:
-      # Tes TCP: Express di src/index.js listen di 5000
-      test: ["CMD", "node", "-e", "require('net').connect(5000,'127.0.0.1').on('connect',()=>process.exit(0)).on('error',()=>process.exit(1))"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 30s
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-          cpus: '1.0'
-
-  wa-web:
-    build:
-      context: ./wa-web
-      dockerfile: Dockerfile
-    container_name: service-wa-web
-    restart: unless-stopped
-    logging: *default-logging
-    ports:
-      # Dashboard Next.js. PUBLIC_PORTS=1 -> ikut terbuka ke publik
-      - "${BIND_IP:-127.0.0.1}:5001:3000"
-    environment:
-      # Opsional: override URL API (default: hostname yang sama port 5000)
-      - NEXT_PUBLIC_WA_API_URL=${WA_API_URL:-}
-    networks:
-      - global-gateway-net
-    depends_on:
-      - wa-gateway
-    healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 60s
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-          cpus: '0.5'
-
   9router:
     # AI gateway/router open-source: satu endpoint OpenAI-compatible (port 20128)
-    # untuk 40+ provider AI dengan fallback otomatis.
-    # Image upstream resmi di Docker Hub (pin versi, bukan latest).
+    # untuk 40+ provider AI dengan fallback otomatis. Pin versi, bukan latest.
     image: decolua/9router:0.5.91
     container_name: service-9router
     restart: unless-stopped
     logging: *default-logging
     ports:
-      # Dashboard + API. PUBLIC_PORTS=1 -> ikut terbuka ke publik
-      - "${BIND_IP:-127.0.0.1}:20128:20128"
+      - "${BIND_IP:-127.0.0.1}:20128:20128"   # akses via SSH tunnel; publik hanya jika PUBLIC_PORTS=1
     environment:
       - DATA_DIR=/app/data
       - PORT=20128
@@ -91,10 +25,9 @@ services:
       # Password awal dashboard (hanya dipakai sebelum user set password sendiri)
       - INITIAL_PASSWORD=${NINEROUTER_PASSWORD:-}
     volumes:
-      # SQLite + token/koneksi provider (jangan di-commit)
-      - ./9router/data:/app/data
-    networks:
-      - global-gateway-net
+      - ./9router/data:/app/data        # SQLite + token provider (di-ignore git)
+    networks: [global-gateway-net]
+    security_opt: ["no-new-privileges:true"]
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:20128/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 30s
@@ -103,10 +36,8 @@ services:
       start_period: 60s
     deploy:
       resources:
-        limits:
-          memory: 1G
-          cpus: '1.0'
+        limits: { memory: 1G, cpus: "1.0" }
 
 networks:
   global-gateway-net:
-    external: true # Memanggil network yang sudah dibuat oleh Nginx
+    external: true

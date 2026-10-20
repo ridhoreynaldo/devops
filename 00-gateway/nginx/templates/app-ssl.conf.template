@@ -1,0 +1,33 @@
+# Template vhost HTTPS generik untuk aplikasi di 04-apps.
+# Ganti: __DOMAIN__ (mis. app.example.com), __UPSTREAM__ (mis. myapp_web:3000)
+#
+#   sed 's/__DOMAIN__/app.example.com/g; s/__UPSTREAM__/myapp_web:3000/g' \
+#       templates/app-ssl.conf.template > conf.d/app-example-com.conf
+#   ../../scripts/issue-cert.sh app.example.com && make nginx-reload
+
+server {
+    listen 80;
+    server_name __DOMAIN__;
+    include /etc/nginx/snippets/acme-challenge.conf;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name __DOMAIN__;
+
+    ssl_certificate     /etc/letsencrypt/live/__DOMAIN__/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/__DOMAIN__/privkey.pem;
+    include /etc/nginx/snippets/security-headers.conf;
+
+    set $upstream http://__UPSTREAM__;
+
+    location / {
+        limit_req zone=req_limit_per_ip burst=20 nodelay;
+        limit_conn conn_limit_per_ip 50;
+        include /etc/nginx/snippets/proxy.conf;
+        proxy_set_header Host $host;
+        proxy_pass $upstream;
+    }
+}

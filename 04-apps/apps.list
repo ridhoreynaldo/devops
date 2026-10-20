@@ -1,0 +1,5 @@
+# Daftar aplikasi yang di-deploy ke 04-apps/<nama>. Satu baris per aplikasi:
+#   <nama>   <url git>   <branch>
+# <nama> = nama folder & nama project compose. Repo harus punya docker-compose.yml (lihat docs/APPS.md).
+# Baris diawali # diabaikan. Repo privat: pakai URL ssh + deploy key di server.
+wa-gateway   https://github.com/ridhoreynaldo/wa-gateway.git   main

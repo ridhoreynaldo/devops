@@ -1,0 +1,7 @@
+# Semua file teks disimpan LF; script & config dijalankan di Linux dan tidak boleh berakhiran CRLF.
+* text=auto eol=lf
+*.sh text eol=lf
+Makefile text eol=lf
+*.conf text eol=lf
+*.ini text eol=lf
+*.yml text eol=lf

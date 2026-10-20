@@ -1,0 +1,61 @@
+# 00-gateway/nginx/conf.d/wa-gateway.conf.example — vhost aplikasi wa-gateway (04-apps/wa-gateway)
+#
+#   cp wa-gateway.conf.example wa-gateway.conf
+#   sed -i 's/wa.example.com/wa.domain-anda.com/g' wa-gateway.conf
+#   ../../../scripts/issue-cert.sh wa.domain-anda.com      # sertifikat Let's Encrypt
+#   make nginx-reload                                      # dari root repo
+#
+# Upstream dirujuk lewat VARIABEL + resolver Docker (nginx.conf) → nginx tetap start
+# walau container wa_gateway_web belum ada; DNS di-resolve saat request.
+
+server {
+    listen 80;
+    server_name wa.example.com;
+    include /etc/nginx/snippets/acme-challenge.conf;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name wa.example.com;
+
+    ssl_certificate     /etc/letsencrypt/live/wa.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/wa.example.com/privkey.pem;
+    include /etc/nginx/snippets/security-headers.conf;
+
+    client_max_body_size 5m;
+    set $upstream http://wa_gateway_web:3000;
+
+    # Form login: anti brute-force (10 req/menit per IP)
+    location = /login {
+        limit_req zone=login_per_ip burst=10 nodelay;
+        include /etc/nginx/snippets/proxy.conf;
+        proxy_set_header Host $host;
+        proxy_pass $upstream;
+    }
+
+    # REST API (aplikasi lain → wa-gateway). Rate limit per IP di nginx; per API key di aplikasi.
+    location /api/ {
+        limit_req zone=req_limit_per_ip burst=50 nodelay;
+        include /etc/nginx/snippets/proxy.conf;
+        proxy_set_header Host $host;
+        proxy_pass $upstream;
+    }
+
+    # Aset statis Next.js: hash di nama file → cache 1 tahun
+    location /_next/static/ {
+        include /etc/nginx/snippets/proxy.conf;
+        proxy_set_header Host $host;
+        proxy_pass $upstream;
+        add_header Cache-Control "public, max-age=31536000, immutable";
+    }
+
+    location / {
+        limit_req zone=req_limit_per_ip burst=20 nodelay;
+        limit_conn conn_limit_per_ip 50;
+        include /etc/nginx/snippets/proxy.conf;
+        proxy_set_header Host $host;
+        proxy_pass $upstream;
+    }
+}

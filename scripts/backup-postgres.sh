@@ -1,8 +1,8 @@
 #!/bin/bash
-# Backup PostgreSQL (pg_dumpall, format custom + gzip) -> folder tanggal -> cleanup >7 hari.
+# Backup PostgreSQL (pg_dumpall, format custom + gzip) -> folder tanggal -> cleanup >14 hari.
 # Password diambil dari 01-infra/.env (TIDAK hardcode di script ini).
 # Jalankan via cron, contoh tiap jam 2:30 pagi:
-#   30 2 * * * /opt/devops-2/scripts/backup-postgres.sh
+#   30 2 * * * /opt/devops/scripts/backup-postgres.sh
 # chmod +x scripts/backup-postgres.sh
 
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
@@ -11,7 +11,7 @@ set -u
 # ==========================================
 # KONFIGURASI
 # ==========================================
-BASE_DIR="${BASE_DIR:-/opt/devops-2}"
+BASE_DIR="${BASE_DIR:-$(cd "$(dirname "$0")/.." && pwd)}"
 CONTAINER="infra_postgres"
 USER="postgres"
 
@@ -40,7 +40,7 @@ mkdir -p "$LOG_DIR"
 echo "===== PG CRON START $(date) =====" >> "$LOG_FILE"
 
 mkdir -p "$HOST_BACKUP_DIR"
-chmod 777 "$HOST_BACKUP_DIR"
+chmod 755 "$HOST_BACKUP_DIR"
 
 # ==========================================
 # PROSES BACKUP (pg_dumpall -> gzip)
@@ -58,12 +58,12 @@ fi
 # ==========================================
 # CLEANUP (Hapus backup lebih dari 7 hari)
 # ==========================================
-echo "Cleaning old backups (older than 7 days)..." >> "$LOG_FILE"
+echo "Cleaning old backups (older than 14 days)..." >> "$LOG_FILE"
 
 BASE_HOST_DIR="$BASE_DIR/01-infra/backup/postgresql"
 
 if [ -d "$BASE_HOST_DIR" ]; then
-  find "$BASE_HOST_DIR" -mindepth 1 -maxdepth 1 -type d -mtime +7 -exec rm -rf {} \;
+  find "$BASE_HOST_DIR" -mindepth 1 -maxdepth 1 -type d -mtime +14 -exec rm -rf {} \;
   echo "Cleanup done" >> "$LOG_FILE"
 else
   echo "Cleanup skipped: Base directory not found" >> "$LOG_FILE"

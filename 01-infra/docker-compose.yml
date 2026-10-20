@@ -1,8 +1,13 @@
-# 01-infra/docker-compose.yml
+# 01-infra — layer data bersama untuk semua aplikasi.
 #
-# PENTING: semua password diambil dari file .env (jangan hardcode!).
-#   cp .env.example .env   -> lalu isi password yang KUAT & UNIK per service
-# File .env sudah masuk .gitignore dan TIDAK BOLEH di-commit.
+#   postgres-db   infra_postgres      PostgreSQL 16 (satu instance, satu database per aplikasi)
+#   pgbouncer     infra_pgbouncer     connection pool (transaction mode) — aplikasi konek ke SINI
+#   redis-cache   infra_redis         cache/session: allkeys-lru, tanpa persistence
+#   redis-queue   infra_redis_queue   antrian (BullMQ dsb): noeviction + AOF — JANGAN dipakai cache
+#   sqlserver-db  infra_sqlserver     SQL Server Express (aplikasi lama)
+#
+# Semua password dari .env (bootstrap.sh men-generate otomatis; manual: cp .env.example .env).
+# Database/user per aplikasi dibuat dengan: ../scripts/create-app-db.sh <nama_app>
 
 x-logging: &default-logging
   driver: "json-file"
@@ -15,23 +20,25 @@ services:
   # 1. POSTGRESQL
   # ==========================================
   postgres-db:
-    image: postgres:16-alpine
+    image: postgres:16-alpine          # JANGAN naik major version tanpa dump/restore — volume lama tidak kompatibel
     container_name: infra_postgres
     restart: unless-stopped
     logging: *default-logging
-    env_file:
-      - .env
+    env_file: [.env]
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?isi POSTGRES_PASSWORD di file .env}
+      # dipakai initdb/01-pgbouncer-auth.sh (role & fungsi auth untuk PgBouncer)
+      PGBOUNCER_AUTH_PASSWORD: ${PGBOUNCER_AUTH_PASSWORD:?isi PGBOUNCER_AUTH_PASSWORD di file .env}
       TZ: Asia/Jakarta
     volumes:
       - postgres-data:/var/lib/postgresql/data
       - ./backup/postgresql:/var/opt/postgresql/backup
       - ./postgres/postgresql.conf:/etc/postgresql/postgresql.conf:ro
+      - ./postgres/initdb:/docker-entrypoint-initdb.d:ro
     command: ["postgres", "-c", "config_file=/etc/postgresql/postgresql.conf"]
-    networks:
-      - global-gateway-net
+    shm_size: 256m
+    networks: [global-gateway-net]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
       interval: 15s
@@ -40,65 +47,105 @@ services:
       start_period: 20s
     deploy:
       resources:
-        limits:
-          memory: 1.5G
-          cpus: '2.0'
+        limits: { memory: 1.5G, cpus: "2.0" }
 
   # ==========================================
-  # 2. PGBOUNCER
+  # 2. PGBOUNCER — aplikasi konek ke infra_pgbouncer:5432
   # ==========================================
   pgbouncer:
     image: pgbouncer/pgbouncer:1.25
     container_name: infra_pgbouncer
     restart: unless-stopped
-    # Lewati entrypoint bawaan image (exit 1 bila env DATABASES_HOST/
-    # DATABASES tidak di-set, walau pgbouncer.ini sudah di-mount).
-    # Jalankan pgbouncer langsung dengan config kita (routing wildcard *).
+    # Lewati entrypoint image (menuntut env DATABASES_*); jalankan langsung dengan ini kita.
     entrypoint: ["/opt/pgbouncer/pgbouncer", "/etc/pgbouncer/pgbouncer.ini"]
     logging: *default-logging
     volumes:
       - ./postgres/pgbouncer.ini:/etc/pgbouncer/pgbouncer.ini:ro
-      - ./postgres/userlist.txt:/etc/pgbouncer/userlist.txt:ro
+      - ./postgres/userlist.txt:/etc/pgbouncer/userlist.txt:ro   # hanya user pgbouncer_auth (lihat userlist.txt.example)
     ports:
-      # Hanya bisa diakses dari server ini. Aplikasi lain pakai network internal.
-      - "${BIND_IP:-127.0.0.1}:5432:5432"
-    networks:
-      - global-gateway-net
+      - "${BIND_IP:-127.0.0.1}:5432:5432"   # akses admin dari host; aplikasi lewat network internal
+    networks: [global-gateway-net]
     depends_on:
-      postgres-db:
-        condition: service_healthy
-    # Catatan: tidak ada healthcheck di sini — pgbouncer otomatis
-    # menyambung ulang ke postgres saat backend sudah siap.
+      postgres-db: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 5432 -U pgbouncer_auth"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
     deploy:
       resources:
-        limits:
-          memory: 256M
-          cpus: '0.5'
+        limits: { memory: 256M, cpus: "0.5" }
 
   # ==========================================
-  # 3. SQL SERVER
+  # 3. REDIS CACHE — boleh hilang kapan saja
+  # ==========================================
+  redis-cache:
+    image: redis:7-alpine
+    container_name: infra_redis
+    restart: unless-stopped
+    logging: *default-logging
+    env_file: [.env]
+    command: >
+      sh -c 'exec redis-server /usr/local/etc/redis/redis.conf
+      --requirepass "$${REDIS_PASSWORD:?isi REDIS_PASSWORD di file .env}"'
+    volumes:
+      - ./redis/cache.conf:/usr/local/etc/redis/redis.conf:ro
+    networks: [global-gateway-net]
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=$${REDIS_PASSWORD} redis-cli ping | grep -q PONG"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits: { memory: 384M, cpus: "0.5" }
+
+  # ==========================================
+  # 4. REDIS QUEUE — antrian job (wa-gateway/BullMQ): noeviction + AOF
+  # ==========================================
+  redis-queue:
+    image: redis:7-alpine
+    container_name: infra_redis_queue
+    restart: unless-stopped
+    logging: *default-logging
+    env_file: [.env]
+    command: >
+      sh -c 'exec redis-server /usr/local/etc/redis/redis.conf
+      --requirepass "$${REDIS_QUEUE_PASSWORD:?isi REDIS_QUEUE_PASSWORD di file .env}"'
+    volumes:
+      - ./redis/queue.conf:/usr/local/etc/redis/redis.conf:ro
+      - redis-queue-data:/data
+    networks: [global-gateway-net]
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=$${REDIS_QUEUE_PASSWORD} redis-cli ping | grep -q PONG"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits: { memory: 640M, cpus: "0.5" }
+
+  # ==========================================
+  # 5. SQL SERVER (aplikasi lama)
   # ==========================================
   sqlserver-db:
     image: mcr.microsoft.com/mssql/server:2022-latest
     container_name: infra_sqlserver
     restart: unless-stopped
     logging: *default-logging
-    env_file:
-      - .env
+    env_file: [.env]
     environment:
       ACCEPT_EULA: "Y"
       MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:?isi MSSQL_SA_PASSWORD di file .env}
       MSSQL_PID: "Express"
       TZ: Asia/Jakarta
     ports:
-      # Hanya bisa diakses dari server ini, JANGAN expose 0.0.0.0
       - "${BIND_IP:-127.0.0.1}:1433:1433"
     volumes:
       - sqlserver-data:/var/opt/mssql
       - ./backup/sqlserver:/var/opt/mssql/backup
-      - ./sqlserver/mssql.conf:/var/opt/mssql/mssql.conf:ro
-    networks:
-      - global-gateway-net
+    networks: [global-gateway-net]
     healthcheck:
       test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"$${MSSQL_SA_PASSWORD}\" -Q 'SELECT 1' -C -b -o /dev/null || exit 1"]
       interval: 30s
@@ -107,46 +154,12 @@ services:
       start_period: 60s
     deploy:
       resources:
-        limits:
-          memory: 2G
-          cpus: '1.0'
-
-  # ==========================================
-  # 4. REDIS CACHE
-  # ==========================================
-  redis-cache:
-    image: redis:7-alpine
-    container_name: infra_redis
-    restart: unless-stopped
-    logging: *default-logging
-    env_file:
-      - .env
-    # Password dibaca dari env di dalam container (tidak kelihatan di docker inspect)
-    command: >
-      sh -c 'exec redis-server
-      --requirepass "$${REDIS_PASSWORD:?isi REDIS_PASSWORD di file .env}"
-      --maxmemory 256mb
-      --maxmemory-policy allkeys-lru'
-    volumes:
-      - redis-data:/data
-    networks:
-      - global-gateway-net
-    healthcheck:
-      test: ["CMD-SHELL", "redis-cli -a \"$${REDIS_PASSWORD}\" ping | grep -q PONG"]
-      interval: 15s
-      timeout: 5s
-      retries: 5
-      start_period: 10s
-    deploy:
-      resources:
-        limits:
-          memory: 256M
-          cpus: '0.5'
+        limits: { memory: 2G, cpus: "1.0" }
 
 volumes:
   postgres-data:
+  redis-queue-data:
   sqlserver-data:
-  redis-data:
 
 networks:
   global-gateway-net:

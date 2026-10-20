@@ -1,0 +1,21 @@
+# Contoh auto-deploy repo devops ke server lewat GitHub Actions self-hosted runner.
+# Aktifkan dengan: mv deploy.yml.example deploy.yml  (setelah runner terpasang di server
+# sebagai user non-root yang masuk grup docker). Tanpa runner, workflow akan antre selamanya.
+#
+# Catatan: ini hanya menarik konfigurasi infra. Aplikasi di-deploy terpisah:
+#   ./scripts/deploy-app.sh <nama>  (atau workflow serupa di repo aplikasi masing-masing)
+name: Sync devops
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  sync:
+    runs-on: self-hosted
+    steps:
+      - name: Pull & reload gateway
+        run: |
+          cd /opt/devops
+          git pull --ff-only origin main
+          make nginx-reload

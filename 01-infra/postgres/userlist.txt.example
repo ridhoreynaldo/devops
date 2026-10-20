@@ -1,6 +1,5 @@
-# 01-infra/postgres/userlist.txt.example
-# Salin menjadi "userlist.txt" lalu samakan passwordnya dengan
-# POSTGRES_PASSWORD di file .env layer ini.
-#   cp userlist.txt.example userlist.txt
-# File userlist.txt TIDAK BOLEH di-commit (sudah masuk .gitignore).
-"postgres" "SAMAKAN_DENGAN_POSTGRES_PASSWORD_DI_ENV"
+; 01-infra/postgres/userlist.txt.example
+; Di-generate otomatis oleh bootstrap.sh menjadi userlist.txt (TIDAK di-commit).
+; Hanya SATU user di sini: role yang dipakai PgBouncer untuk auth_query.
+; User aplikasi TIDAK ditulis di sini — diambil dari Postgres lewat pgbouncer.get_auth().
+"pgbouncer_auth" "PGBOUNCER_AUTH_PASSWORD_DARI_ENV"

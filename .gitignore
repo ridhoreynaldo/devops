@@ -1,37 +1,34 @@
-# ===== Environment & Secrets (JANGAN PERNAH DI-COMMIT) =====
+# ===== Secrets — TIDAK PERNAH di-commit (repo ini publik) =====
 .env
 **/.env
 *.env.local
-# Sesi WhatsApp Baileys = kunci akses penuh akun WA
-03-services/wa-gateway/auth_info_baileys/
-03-services/wa-gateway/sessions/
-# Password pgbouncer (lihat userlist.txt.example)
 01-infra/postgres/userlist.txt
+*.key
+*.pem
+*.crt
+*.p12
+*.pfx
 
-# ===== SSL Certificates (private key JANGAN PERNAH DI-COMMIT) =====
-00-gateway/ssl/**/*.pem
-00-gateway/ssl/**/*.crt
-00-gateway/ssl/**/*.key
+# ===== Sertifikat & data gateway =====
+00-gateway/ssl/*
+!00-gateway/ssl/README.md
 00-gateway/letsencrypt/
-00-gateway/certbot/www/
+00-gateway/certbot/
+00-gateway/nginx/conf.d/*-ssl.conf     # vhost domain utama dibuat bootstrap dari template
 
-# ===== Logs =====
+# ===== Data runtime =====
 **/logs/
 *.log
-
-# ===== Database & Backup Data =====
 01-infra/backup/
+03-services/9router/data/
 
-# ===== Aplikasi (source code) =====
-apps/**/src/
-
-# ===== Dependencies =====
-**/vendor/
+# ===== Aplikasi: repo sendiri, di-clone ke 04-apps/<nama> (lihat 04-apps/.gitignore) =====
 **/node_modules/
+**/vendor/
 
-# ===== Docker & OS junk =====
+# ===== OS / editor =====
 .DS_Store
 Thumbs.db
-03-services/.env
-04-apps/portfolio/
-04-apps/.env
+*:Zone.Identifier
+.idea/
+.vscode/

@@ -1,2 +1,0 @@
-sudo mkdir -p /opt/devops-2
-sudo chown -R administrator:administrator /opt/devops-2

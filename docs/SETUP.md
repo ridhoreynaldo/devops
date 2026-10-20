@@ -59,6 +59,7 @@ Yang berubah untuk aplikasi lama:
 - `wa-gateway` versi JS lama (`03-services/wa-gateway`, port 5000/5001) **dihapus**. Penggantinya repo
   [`wa-gateway`](https://github.com/ridhoreynaldo/wa-gateway) di `04-apps`. Sesi WA lama (folder `sessions/`)
   tidak kompatibel → scan QR ulang. Pemanggil `POST /send-wa` lama sekarang wajib header `Authorization: Bearer <api key>`.
+- `portfolio` versi lama (`04-apps/docker-compose.yml`, user superuser `postgres`) digantikan repo `portfolio` v2 dengan compose sendiri: jalankan `make app-db A=portfolio` (membuat role `portfolio` dan memindahkan kepemilikan tabel lama), isi `04-apps/portfolio/.env`, lalu `make deploy A=portfolio`. Data (project, pengalaman, user) tetap dipakai — migrasi 0004 aplikasi mengubah skemanya.
 - Setelah yakin semua jalan: `rm -rf /opt/devops-2` (backup `.env`-nya dulu).
 
 ## Firewall

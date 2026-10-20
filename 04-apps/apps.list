@@ -3,3 +3,4 @@
 # <nama> = nama folder & nama project compose. Repo harus punya docker-compose.yml (lihat docs/APPS.md).
 # Baris diawali # diabaikan. Repo privat: pakai URL ssh + deploy key di server.
 wa-gateway   https://github.com/ridhoreynaldo/wa-gateway.git   main
+portfolio    https://github.com/ridhoreynaldo/portfolio.git    main

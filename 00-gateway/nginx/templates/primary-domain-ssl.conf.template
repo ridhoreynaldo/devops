@@ -1,4 +1,4 @@
-# Vhost HTTPS domain utama (PRIMARY_DOMAIN di /opt/devops/.env) → aplikasi portfolio (04-apps legacy).
+# Vhost HTTPS domain utama (PRIMARY_DOMAIN di /opt/devops/.env) → aplikasi portfolio (04-apps/portfolio, container portfolio_web).
 # Dipasang oleh bootstrap.sh ke conf.d/<domain>-ssl.conf HANYA bila sertifikat sudah terbit.
 server {
     listen 443 ssl;
@@ -9,7 +9,7 @@ server {
     ssl_certificate_key /etc/letsencrypt/live/__DOMAIN__/privkey.pem;
     include /etc/nginx/snippets/security-headers.conf;
 
-    set $upstream http://app_portfolio:3000;
+    set $upstream http://portfolio_web:3000;
 
     location / {
         limit_req zone=req_limit_per_ip burst=20 nodelay;

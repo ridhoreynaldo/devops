@@ -4,5 +4,3 @@
 !.gitignore
 !README.md
 !apps.list
-!docker-compose.yml
-!.env.example

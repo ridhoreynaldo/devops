@@ -7,8 +7,7 @@ Repo `devops` hanya menyimpan daftar aplikasinya di `apps.list`.
 04-apps/
 ├── apps.list            # <nama> <url git> <branch>  — dibaca bootstrap.sh & scripts/deploy-app.sh
 ├── wa-gateway/          # (clone, tidak di-commit) → punya docker-compose.yml sendiri
-├── docker-compose.yml   # LEGACY: aplikasi lama yang belum punya compose sendiri (portfolio)
-└── .env                 # LEGACY: env untuk compose di atas (tidak di-commit)
+└── portfolio/           # (clone, tidak di-commit) → idem
 ```
 
 Deploy / update satu aplikasi:

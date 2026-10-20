@@ -178,27 +178,7 @@ fi
 # ----------------------------------------------------------
 log "== Layer 5: 04-apps =="
 
-# (a) legacy: portfolio — tanpa compose sendiri, dibangun oleh 04-apps/docker-compose.yml
-if [ -d 04-apps/portfolio/.git ] || git ls-remote -q https://github.com/ridhoreynaldo/portfolio >/dev/null 2>&1; then
-  if [ ! -d 04-apps/portfolio/.git ]; then
-    git clone --depth 1 https://github.com/ridhoreynaldo/portfolio 04-apps/portfolio || warn "Clone portfolio gagal."
-  else
-    git -C 04-apps/portfolio fetch --depth 1 origin main >/dev/null 2>&1 && git -C 04-apps/portfolio reset -q --hard FETCH_HEAD || warn "Update portfolio gagal — pakai versi lokal."
-  fi
-  if [ -d 04-apps/portfolio/.git ]; then
-    A="04-apps/.env"
-    ensure_env "$A" PGHOST infra_pgbouncer; ensure_env "$A" PGPORT 5432; ensure_env "$A" PGUSER postgres
-    ensure_env "$A" PGPASSWORD "$PG_PASS"; ensure_env "$A" PGDATABASE portfolio
-    ensure_env "$A" JWT_SECRET "$(openssl rand -hex 32)"; ensure_env "$A" ADMIN_EMAIL admin@local
-    ensure_env "$A" ADMIN_PASSWORD "$(gen_pass)"; ensure_env "$A" PORTFOLIO_PORT 3002
-    sed -i "s|^PGPASSWORD=.*|PGPASSWORD=$PG_PASS|" "$A"   # ikut password superuser aktif
-    docker exec -e PGPASSWORD="$PG_PASS" infra_postgres psql -U postgres -tc "SELECT 1 FROM pg_database WHERE datname='portfolio'" | grep -q 1 \
-      || docker exec -e PGPASSWORD="$PG_PASS" infra_postgres psql -U postgres -c "CREATE DATABASE portfolio" >/dev/null
-    docker compose -f 04-apps/docker-compose.yml up -d --build || warn "Deploy portfolio gagal."
-  fi
-fi
-
-# (b) aplikasi dengan compose sendiri — 04-apps/apps.list
+# Semua aplikasi punya compose sendiri dan terdaftar di 04-apps/apps.list
 while read -r name url branch; do
   [[ -z "$name" || "$name" == \#* ]] && continue
   log "-- $name"
@@ -219,7 +199,7 @@ fi
 log "Selesai. Container:"
 docker ps --format '  {{.Names}}  {{.Status}}' | sort
 echo
-log "Password dashboard: 02-monitoring/.env (Grafana), 03-services/.env (9Router), 04-apps/.env (portfolio ADMIN_PASSWORD)."
+log "Password dashboard: 02-monitoring/.env (Grafana), 03-services/.env (9Router). Login aplikasi: lihat .env masing-masing di 04-apps/<app>/."
 log "Berikutnya: make app-db A=<app>  →  isi 04-apps/<app>/.env  →  make deploy A=<app>  →  vhost + make cert D=<domain>"
 [ -z "$PRIMARY_DOMAIN" ] && warn "PRIMARY_DOMAIN kosong di .env — HTTPS domain utama belum dipasang."
 warn "Amankan SSH: pakai key, matikan login password; firewall hanya 22/80/443."
